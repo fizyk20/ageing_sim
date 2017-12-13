@@ -7,7 +7,7 @@ extern crate tiny_keccak;
 
 mod network;
 
-use rand::{thread_rng, Rng};
+use rand::{Rng, StdRng, SeedableRng};
 use network::Network;
 
 /// The probabilities for nodes joining and leaving the network, as percentages.
@@ -30,7 +30,8 @@ fn random_event<R: Rng>(network: &mut Network, rng: &mut R) {
 }
 
 fn main() {
-    let mut rng = thread_rng();
+    let seed: &[_] = &[0];
+    let mut rng: StdRng = SeedableRng::from_seed(seed);
     let mut network = Network::new();
     for i in 0..100000 {
         println!("Iteration {}...", i);
