@@ -438,23 +438,25 @@ impl fmt::Debug for Network {
 // Display network summary as a markdown table
 impl fmt::Display for Network {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        // Network summary
-        try!(writeln!(fmt, "|    Metrics    |  Values  |"));
-        try!(writeln!(fmt, "|:--------------|---------:|"));
-        try!(writeln!(fmt, "| Adds          | {:>8} |", self.output.adds));
-        try!(writeln!(fmt, "| Drops         | {:>8} |", self.output.drops));
-        try!(writeln!(fmt, "| Rejoins       | {:>8} |", self.output.rejoins));
-        try!(writeln!(fmt, "| Relocations   | {:>8} |", self.output.relocations));
-        try!(writeln!(fmt, "| Rejections    | {:>8} |", self.output.rejections));
-        try!(writeln!(fmt, "| Churns        | {:>8} |", self.output.churn));
         let sections = self.num_sections();
-        try!(writeln!(fmt, "| Sections      | {:>8} |", sections));
+        let rejecting = self.nodes.iter().filter(|&(_, s)| s.reject_young_node(&self.params)).count() as f64;
+        // Network summary
+        try!(writeln!(fmt, "|    Metrics     |  Values  |"));
+        try!(writeln!(fmt, "|:---------------|---------:|"));
+        try!(writeln!(fmt, "| Adds           | {:>8} |", self.output.adds));
+        try!(writeln!(fmt, "| Drops          | {:>8} |", self.output.drops));
+        try!(writeln!(fmt, "| Rejoins        | {:>8} |", self.output.rejoins));
+        try!(writeln!(fmt, "| Relocations    | {:>8} |", self.output.relocations));
+        try!(writeln!(fmt, "| Rejections     | {:>8} |", self.output.rejections));
+        try!(writeln!(fmt, "| Churns         | {:>8} |", self.output.churn));
+        try!(writeln!(fmt, "| Sections       | {:>8} |", sections));
         let complete = self.complete_sections();
         if complete != sections {
-            try!(writeln!(fmt, "| Complete      | {:>8} |", complete));
+            try!(writeln!(fmt, "| Complete       | {:>8} |", complete));
         }
-        try!(writeln!(fmt, "| Section nodes | {:>8} |", usize::sum(self.nodes.values().map(|s| s.len()))));
-        try!(writeln!(fmt, "| Left nodes    | {:>8} |", self.left_nodes.len()));
+        try!(writeln!(fmt, "| Section nodes  | {:>8} |", usize::sum(self.nodes.values().map(|s| s.len()))));
+        try!(writeln!(fmt, "| Left nodes     | {:>8} |", self.left_nodes.len()));
+        try!(writeln!(fmt, "| Rejection rate | {:>7.0}% |", rejecting / sections as f64 * 100.0));
         try!(writeln!(fmt));
 
         // Distribution of sections per prefix length
@@ -466,7 +468,7 @@ impl fmt::Display for Network {
         let mut lengths: Vec<u8> = distribution.keys().cloned().collect();
         lengths.sort();
         try!(writeln!(fmt, "| Prefix len {}", Stats::get_header_line()));
-        try!(writeln!(fmt, "|:-----------{}", Stats::get_separator_line()));
+        try!(writeln!(fmt, "|-----------:{}", Stats::get_separator_line()));
         for i in lengths {
             try!(writeln!(fmt, "| {:>10} | {}", i, Stats::new(distribution.get(&i).unwrap())))
         }

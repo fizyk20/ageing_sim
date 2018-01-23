@@ -90,7 +90,7 @@ impl Section {
     /// Returns whether the section has a complete group.
     /// A complete group is GROUP_SIZE nodes that are Adults (have age > 4)
     pub fn is_complete(&self) -> bool {
-        self.elders.len() == 8
+        self.elders.len() == GROUP_SIZE
             && self.elders
                 .iter()
                 .filter_map(|x| self.nodes.get(x))
@@ -188,7 +188,7 @@ impl Section {
         }
         let event_hash = event.hash();
         let trailing_zeros = trailing_zeros(event_hash);
-        let node_to_age = self.choose_for_relocation(trailing_zeros + params.init_age);
+        let node_to_age = self.choose_for_relocation(trailing_zeros + params.init_age - 1);
         if let Some(node) = node_to_age {
             let _ = self.relocate(node.name());
             vec![SectionEvent::NeedRelocate(node)]
@@ -197,12 +197,16 @@ impl Section {
         }
     }
 
-    /// Adds a node to the section and returns whether the event was handled
-    fn add(&mut self, node: Node, params: &Params) -> EventResult {
-        if params.max_young != 0 && node.age() == params.init_age
+    // Indicates if the section would currently refuse a young node
+    pub fn reject_young_node(&self, params: &Params) -> bool {
+        params.max_young != 0
             && self.nodes.values().filter(|n| n.age() <= params.init_age).count() >= params.max_young
             && self.is_complete()
-        {
+    }
+
+    /// Adds a node to the section and returns whether the event was handled
+    fn add(&mut self, node: Node, params: &Params) -> EventResult {
+        if node.age() == params.init_age && self.reject_young_node(params) {
             // disallow more than one node aged 1 per section if the section is complete
             // (all elders are adults)
             info!("Node {:?} refused in section {:?}", node, self.prefix);
