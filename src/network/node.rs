@@ -30,7 +30,12 @@ impl Node {
     }
 
     /// Generates a relocated name and increases the age by 1
-    pub fn relocate(&mut self, prefix: &Prefix) {
+    /// bit parameter indicates in which half of the section the node is relocated
+    pub fn relocate(&mut self, prefix: &Prefix, bit: Option<u8>) {
+        let prefix : Prefix = match bit {
+            None => *prefix,
+            Some(bit) => prefix.extend(bit),
+        };
         self.name = prefix.substituted_in(Name(random()));
         self.age += 1;
     }

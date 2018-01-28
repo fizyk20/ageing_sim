@@ -355,8 +355,9 @@ impl Section {
         }
     }
 
-    /// Returns whether the section should split. If we are already splitting, returns false
-    pub fn should_split(&self, params: &Params) -> bool {
+    /// Count the number of adults (or peers if section is incomplete and strategy is always)
+    // in each half of a section
+    pub fn count_halves(&self, params: &Params) -> (usize, usize) {
         use params::Strategy::*;
         let prefix0 = self.prefix.extend(0);
         let prefix1 = self.prefix.extend(1);
@@ -366,6 +367,12 @@ impl Section {
         };
         let count0 = count_prefix(self, &prefix0);
         let count1 = count_prefix(self, &prefix1);
+        (count0, count1)
+    }
+
+    /// Returns whether the section should split. If we are already splitting, returns false
+    pub fn should_split(&self, params: &Params) -> bool {
+        let (count0, count1) = self.count_halves(params);
         !self.merging && !self.splitting && count0 >= GROUP_SIZE + BUFFER
             && count1 >= GROUP_SIZE + BUFFER
     }

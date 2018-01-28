@@ -324,15 +324,18 @@ impl Network {
                 .keys()
                 .filter(|&pfx| pfx.is_neighbour(src_section))
                 .collect();
-            // relocate to the neighbour with the least peers as per the document
+            // relocate to the neighbour first with the shortest prefix and then the least peers as per the document
             neighbours.sort_by_key(|pfx| pfx.len() as usize * 10000 + self.nodes.get(pfx).unwrap().len());
             let neighbour = if let Some(n) = neighbours.first() {
                 n
             } else {
                 src_section
             };
+            // Choose in which half of the section we relocate the node (to balance the section)
+            let (count0, count1) = self.nodes.get(&neighbour).unwrap().count_halves(&self.params);
+            let bit: Option<u8> = if count0 == count1 { None} else if count0 > count1 { Some(1) } else { Some(0) };
             let old_node = node.clone();
-            node.relocate(neighbour);
+            node.relocate(neighbour, bit);
             info!(
                 "Relocating {:?} from {:?} to {:?} as {:?}",
                 old_node, src_section, neighbour, node
