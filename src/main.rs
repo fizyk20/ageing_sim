@@ -119,6 +119,14 @@ fn get_params() -> Params {
                 .short("a")
                 .help("Increment node ages on merges and splits")
         )
+        .arg(
+            Arg::with_name("relocation_rate")
+                .short("r")
+                .long("relocation_rate")
+                .value_name("RATE")
+                .help("Selects the relocation rate (standard/aggressive); default: standard")
+                .takes_value(true),
+        )
         .get_matches();
     let init_age = matches
         .value_of("initage")
@@ -153,6 +161,12 @@ fn get_params() -> Params {
         .parse()
         .expect("Number of summary intervals must be a number!");
     let inc_age = matches.is_present("age_inc");
+    let relocation_rate = matches
+        .value_of("relocation_rate")
+        .unwrap_or("standard")
+        .parse()
+        .ok()
+        .expect("Relocation rate must be \"standard\" or \"aggressive\"");
     let p_add1 = matches
         .value_of("p_add1")
         .unwrap_or("90")
@@ -180,6 +194,7 @@ fn get_params() -> Params {
         structure_output_file,
         drop_dist,
         inc_age,
+        relocation_rate,
     }
 }
 
