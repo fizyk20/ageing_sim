@@ -1,7 +1,5 @@
 use network::prefix::{Name, Prefix};
-use network::node::{Digest, Node};
-use serde_json;
-use tiny_keccak::sha3_256;
+use network::node::Node;
 
 /// Events that can happen in the network.
 /// The sections handle them and generate new ones
@@ -20,12 +18,6 @@ pub enum NetworkEvent {
 }
 
 impl NetworkEvent {
-    /// Returns the digest of some representation of the network event:
-    /// used in ageing (to determine if a peer should be relocated).
-    pub fn hash(&self) -> Digest {
-        sha3_256(&serde_json::to_vec(self).unwrap())
-    }
-
     /// This function determines whether an event should count towards
     /// churn in ageing peers in the section. Currently true for all events.
     pub fn should_count(&self) -> bool {

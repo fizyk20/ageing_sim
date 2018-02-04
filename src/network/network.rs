@@ -312,13 +312,16 @@ impl Network {
 
     /// Chooses a new section for the given node, generates a new name for it,
     /// increases its age,  and sends a `Live` event to the section.
-    fn relocate(&mut self, mut node: Node) {
+    fn relocate(&mut self, node: Node) {
         self.output.relocations += 1;
         self.output.churn += 2; // leaving one section and joining another one
         let (node, neighbour) = {
+            // Choose a complete random name, then get its section and lastly select its weakest neighbour.
+            // (But I am not sure to know what I am doing)
+            let mut new_node = Node::new(random(), node.age());
             let src_section = self.nodes
                 .keys()
-                .find(|&pfx| pfx.matches(node.name()))
+                .find(|&pfx| pfx.matches(new_node.name()))
                 .unwrap();
             let mut neighbours: Vec<_> = self.nodes
                 .keys()
@@ -334,13 +337,12 @@ impl Network {
             // Choose in which half of the section we relocate the node (to balance the section)
             let (count0, count1) = self.nodes.get(&neighbour).unwrap().count_halves(&self.params);
             let bit: Option<u8> = if count0 == count1 { None} else if count0 > count1 { Some(1) } else { Some(0) };
-            let old_node = node.clone();
-            node.relocate(neighbour, bit);
+            new_node.relocate(neighbour, bit);
             info!(
                 "Relocating {:?} from {:?} to {:?} as {:?}",
-                old_node, src_section, neighbour, node
+                node, src_section, neighbour, new_node
             );
-            (node, neighbour)
+            (new_node, neighbour)
         };
         self.event_queue
             .entry(*neighbour)

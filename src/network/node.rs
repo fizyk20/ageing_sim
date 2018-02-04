@@ -1,7 +1,5 @@
 use std::fmt;
-use serde_json;
 use random::random;
-use tiny_keccak::sha3_256;
 use network::prefix::{Name, Prefix};
 use params::DropDist;
 
@@ -73,11 +71,5 @@ impl Node {
             DropDist::RevProp => 10.0 / self.age as f64,
             DropDist::Exponential => 2.0f64.powf(-(self.age as f64)),
         }
-    }
-
-    /// Returns the hash of the node struct
-    #[allow(unused)]
-    pub fn hash(&self) -> Digest {
-        sha3_256(serde_json::to_string(self).unwrap().as_bytes())
     }
 }

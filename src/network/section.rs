@@ -5,6 +5,7 @@ use network::prefix::{Name, Prefix};
 use network::node::{Digest, Node};
 use network::churn::{NetworkEvent, SectionEvent};
 use params::{Params, RelocationRate};
+use random::random;
 
 
 /// An enum for return values of some methods.
@@ -187,7 +188,9 @@ impl Section {
         if !event.should_count() {
             return vec![];
         }
-        let event_hash = event.hash();
+        // The hashed object isn't known yet and doesn't really matter for this simulation
+        // => just take a random number
+        let event_hash = random();
         let trailing_zeros = trailing_zeros(event_hash);
         let node_to_age = self.choose_for_relocation(trailing_zeros + params.init_age - 1
                                                     + if params.relocation_rate == RelocationRate::Standard { 0 } else { 1 });
