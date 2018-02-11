@@ -38,7 +38,7 @@ impl Node {
         self.age += 1;
     }
 
-    /// Halves the age, because the node is rejoining
+    /// Decrement the age, because the node is rejoining
     pub fn rejoined(&mut self, min_age: u8) {
         if self.age > min_age {
             self.age -= 1;
@@ -53,11 +53,6 @@ impl Node {
     /// Returns the age
     pub fn age(&self) -> u8 {
         self.age
-    }
-
-    /// age ++
-    pub fn increment_age(&mut self) {
-        self.age = self.age + 1
     }
 
     /// Returns whether the node is an Adult

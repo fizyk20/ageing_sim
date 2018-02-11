@@ -112,17 +112,19 @@ fn get_params() -> Params {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("age_inc")
-                .long("age-inc")
-                .short("a")
-                .help("Increment node ages on merges and splits")
-        )
-        .arg(
             Arg::with_name("relocation_rate")
                 .short("r")
                 .long("relocation_rate")
                 .value_name("RATE")
                 .help("Selects the relocation rate (standard/aggressive); default: standard")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("distant_relocation_probability")
+                .short("d")
+                .long("distant-relocation-probability")
+                .value_name("P")
+                .help("Probability of distant relocation (0-100); default: 100")
                 .takes_value(true),
         )
         .get_matches();
@@ -158,13 +160,20 @@ fn get_params() -> Params {
         .unwrap_or("10000")
         .parse()
         .expect("Number of summary intervals must be a number!");
-    let inc_age = matches.is_present("age_inc");
     let relocation_rate = matches
         .value_of("relocation_rate")
         .unwrap_or("standard")
         .parse()
         .ok()
         .expect("Relocation rate must be \"standard\" or \"aggressive\"");
+    let mut distant_relocation_probability = matches
+        .value_of("distant_relocation_probability")
+        .unwrap_or("100")
+        .parse()
+        .expect("Distant relocation probability must be a number!");
+    distant_relocation_probability /= 100.0;
+    assert!(0.0 <= distant_relocation_probability &&
+            distant_relocation_probability <= 100.0, "Probability must be between 0 and 100!");
     let p_add1 = matches
         .value_of("p_add1")
         .unwrap_or("90")
@@ -191,8 +200,8 @@ fn get_params() -> Params {
         growth: (p_add1, p_drop1),
         structure_output_file,
         drop_dist,
-        inc_age,
         relocation_rate,
+        distant_relocation_probability,
     }
 }
 
@@ -239,6 +248,7 @@ fn main() {
     println!("\nAge distribution:");
     print_dist(age_dist);
 
+    network.capture_network_structure();
     let drop_dist = &network.output().drops_dist;
     println!("\nDrops distribution by age:");
     print_dist(drop_dist.clone());

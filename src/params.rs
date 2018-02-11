@@ -72,6 +72,11 @@ pub struct Params {
     pub growth: (u8, u8),
     pub structure_output_file: Option<String>,
     pub drop_dist: DropDist,
-    pub inc_age: bool,
     pub relocation_rate: RelocationRate,
+    // A number between 0 and 1 indicating probability of distant relocation:
+    // - 0 => purely local, meaning the weakest neighbour of current section is chosen
+    // - 1 => purely distant, meaning a random section is chosen in the whole network
+    //   and then the weakest neighbour of this section is chosen
+    // - between the 0 and 1 a mix of the two methods
+    pub distant_relocation_probability: f64,
 }

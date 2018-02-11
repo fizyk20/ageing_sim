@@ -16,14 +16,20 @@ impl fmt::Debug for Name {
 }
 
 /// A structure representing a network prefix - a simplified version of the Prefix struct from
+/// bits field put before len field so that prefixes are ordered correctly in btree maps
 /// `routing`
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Prefix {
-    len: u8,
     bits: u64,
+    len: u8,
 }
 
 impl Prefix {
+    /// Build a prefix from name, with len set to 255
+    pub fn from_name(name: &Name) -> Prefix {
+        Prefix { bits: name.0, len: <u8>::max_value() }
+    }
+
     pub fn empty() -> Prefix {
         Prefix { bits: 0, len: 0 }
     }
@@ -43,6 +49,7 @@ impl Prefix {
         self.len
     }
 
+    // Generate a mask with len highest bits set to 1, for example 11110000 ... 00000000 if len == 4
     fn len_mask(&self) -> u64 {
         if self.len == 0 {
             0

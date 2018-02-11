@@ -114,7 +114,7 @@ impl Network {
         self.event_queue.values().any(|x| !x.is_empty())
     }
 
-    fn capture_network_structure(&mut self) {
+    pub fn capture_network_structure(&mut self) {
         let structure = NetworkStructure {
             size: self.nodes.values().map(|x| x.len()).sum(),
             sections: self.nodes.len(),
@@ -158,10 +158,11 @@ impl Network {
             info!("Finalising a merge into {:?}", pfx);
             self.output.churn += 1; // counting merge as a single churn event
             let pending_merge = self.pending_merges.remove(&pfx).unwrap().into_map();
-            let merged_section = self.merged_section(pending_merge.keys(), true);
+            let mut merged_section = self.merged_section(pending_merge.keys(), true);
+            merged_section.recompute_drop_weight(&self.params);
             self.nodes.insert(merged_section.prefix(), merged_section);
         }
-        self.capture_network_structure();
+        // self.capture_network_structure();
     }
 
     /// Processes a single response from a section and potentially inserts some events into its
@@ -182,7 +183,7 @@ impl Network {
             }
             SectionEvent::RequestSplit => {
                 if let Some(section) = self.nodes.remove(&prefix) {
-                    let ((sec0, ev0), (sec1, ev1)) = section.split(&self.params);
+                    let ((mut sec0, ev0), (mut sec1, ev1)) = section.split();
                     let _ = self.event_queue.remove(&prefix);
                     self.event_queue
                         .entry(sec0.prefix())
@@ -192,7 +193,9 @@ impl Network {
                         .entry(sec1.prefix())
                         .or_insert_with(Vec::new)
                         .extend(ev1);
+                    sec0.recompute_drop_weight(&self.params);
                     self.nodes.insert(sec0.prefix(), sec0);
+                    sec1.recompute_drop_weight(&self.params);
                     self.nodes.insert(sec1.prefix(), sec1);
                     self.output.churn += 1; // counting the split as one churn event
                 }
@@ -222,7 +225,7 @@ impl Network {
             .collect();
 
         while sections.len() > 1 {
-            sections.sort_by_key(|s| s.prefix());
+            sections.sort_by_key(|s| s.prefix().len());
             let section1 = sections.pop().unwrap();
             let section2 = sections.pop().unwrap();
             let section = section1.merge(section2, &self.params);
@@ -284,7 +287,7 @@ impl Network {
         self.output.churn += 1;
         let node = Node::new(random(), self.params.init_age);
         info!("Adding node {:?}", node);
-        let prefix = self.prefix_for_node(node).unwrap();
+        let prefix = self.prefix_for_node(node);
         self.event_queue
             .entry(prefix)
             .or_insert_with(Vec::new)
@@ -297,17 +300,23 @@ impl Network {
     fn total_drop_weight(&self) -> f64 {
         self.nodes
             .iter()
-            .flat_map(|(_, s)| s.nodes().into_iter())
-            .map(|n| n.drop_probability(self.params.drop_dist))
+            .map(|(_, s)| s.drop_weight())
             .sum()
     }
 
     /// Returns the prefix a node should belong to.
-    fn prefix_for_node(&self, node: Node) -> Option<Prefix> {
-        self.nodes
-            .keys()
-            .find(|pfx| pfx.matches(node.name()))
-            .cloned()
+    fn prefix_for_node(&self, node: Node) -> Prefix {
+        // Use reverse iterator from node name to get section prefix
+        let max = Prefix::from_name(&node.name());
+        let pfx = self.nodes.range(..max).next_back().map(|(pfx, _)| pfx.clone()).unwrap();
+        // Check that the algorithm is correct
+        assert!(
+            pfx.matches(node.name()),
+            "Section {:?} does not match {:?}!",
+            pfx,
+            node.name()
+        );
+        pfx
     }
 
     /// Chooses a new section for the given node, generates a new name for it,
@@ -317,22 +326,42 @@ impl Network {
         self.output.churn += 2; // leaving one section and joining another one
         let (node, neighbour) = {
             // Choose a complete random name, then get its section and lastly select its weakest neighbour.
-            // (But I am not sure to know what I am doing)
-            let mut new_node = Node::new(random(), node.age());
-            let src_section = self.nodes
-                .keys()
-                .find(|&pfx| pfx.matches(new_node.name()))
-                .unwrap();
-            let mut neighbours: Vec<_> = self.nodes
-                .keys()
-                .filter(|&pfx| pfx.is_neighbour(src_section))
-                .collect();
+            let mut new_node = if random::<f64>() < self.params.distant_relocation_probability {
+                Node::new(random(), node.age())
+            } else {
+                node.clone()
+            };
+            let src_section = self.prefix_for_node(new_node);
+            // Neighbours are sections having one bit difference. They can be shorter or longer
+            // but we exclude longer ones because they are in better shape.
+            let mut neighbours: Vec<Prefix> = Vec::new();
+            let len = src_section.len();
+            for pos in 0..len {
+                let mut pfx = src_section.with_flipped_bit(pos);
+                for _ in 0..len-pos {
+                    if self.nodes.contains_key(&pfx) {
+                        // Check that the algorithm is correct
+                        assert!(
+                            pfx.is_neighbour(&src_section),
+                            "Section {:?} is not neighbour of {:?}!",
+                            pfx,
+                            src_section
+                        );
+                        neighbours.push(pfx.clone());
+                        // A shorter prefix cannot exist
+                        break;
+                    }
+                    pfx = pfx.shorten();
+                }
+            }
+            // Add src_section itself
+            neighbours.push(src_section.clone());
             // relocate to the neighbour first with the shortest prefix and then the least peers as per the document
             neighbours.sort_by_key(|pfx| pfx.len() as usize * 10000 + self.nodes.get(pfx).unwrap().len());
             let neighbour = if let Some(n) = neighbours.first() {
                 n
             } else {
-                src_section
+                &src_section
             };
             // Choose in which half of the section we relocate the node (to balance the section)
             let (count0, count1) = self.nodes.get(&neighbour).unwrap().count_halves(&self.params);
@@ -342,10 +371,10 @@ impl Network {
                 "Relocating {:?} from {:?} to {:?} as {:?}",
                 node, src_section, neighbour, new_node
             );
-            (new_node, neighbour)
+            (new_node, neighbour.clone())
         };
         self.event_queue
-            .entry(*neighbour)
+            .entry(neighbour)
             .or_insert_with(Vec::new)
             .push(NetworkEvent::Live(node, true));
     }
@@ -357,29 +386,39 @@ impl Network {
         self.output.churn += 1;
         let total_weight = self.total_drop_weight();
         let mut drop = random::<f64>() * total_weight;
-        let node_and_prefix = {
+        let prefix_and_section = {
             let mut res = None;
-            let nodes_iter = self.nodes
-                .iter()
-                .flat_map(|(p, s)| s.nodes().into_iter().map(move |n| (*p, n)));
-            for (p, n) in nodes_iter {
-                if n.drop_probability(self.params.drop_dist) > drop {
-                    res = Some((p, n));
+            for (p, s) in &self.nodes {
+                if s.drop_weight() > drop {
+                    res = Some((p, s));
                     break;
                 }
-                drop -= n.drop_probability(self.params.drop_dist);
+                drop -= s.drop_weight();
             }
             res
         };
-        node_and_prefix.map(|(prefix, node)| {
-            *self.output.drops_dist.entry(node.age()).or_insert(0) += 1;
-            let name = node.name();
-            info!("Dropping node {:?} from section {:?}", name, prefix);
-            self.event_queue
-                .entry(prefix)
-                .or_insert_with(Vec::new)
-                .push(NetworkEvent::Lost(name));
-        });
+        if let Some((prefix, section)) = prefix_and_section {
+            let node = {
+                let mut res = None;
+                for n in section.nodes().into_iter() {
+                    if n.drop_probability(self.params.drop_dist) > drop {
+                        res = Some(n);
+                        break;
+                    }
+                    drop -= n.drop_probability(self.params.drop_dist);
+                }
+                res
+            };
+            if let Some(node) = node {
+                *self.output.drops_dist.entry(node.age()).or_insert(0) += 1;
+                let name = node.name();
+                info!("Dropping node {:?} from section {:?}", name, prefix);
+                self.event_queue
+                    .entry(*prefix)
+                    .or_insert_with(Vec::new)
+                    .push(NetworkEvent::Lost(name));
+            }
+        }
     }
 
     /// Chooses a random node from among the ones that left the network and gets it to rejoin.
@@ -391,7 +430,7 @@ impl Network {
         if let Some(mut node) = self.left_nodes.pop() {
             info!("Rejoining node {:?}", node);
             node.rejoined(self.params.init_age);
-            let prefix = self.prefix_for_node(node).unwrap();
+            let prefix = self.prefix_for_node(node);
             self.event_queue
                 .entry(prefix)
                 .or_insert_with(Vec::new)
@@ -462,7 +501,6 @@ impl fmt::Display for Network {
         try!(writeln!(fmt, "| Section nodes  | {:>8} |", usize::sum(self.nodes.values().map(|s| s.len()))));
         try!(writeln!(fmt, "| Left nodes     | {:>8} |", self.left_nodes.len()));
         try!(writeln!(fmt, "| Rejection rate | {:>7.0}% |", rejecting / sections as f64 * 100.0));
-        try!(writeln!(fmt));
 
         // Distribution of sections per prefix length
         let mut distribution : BTreeMap<u8, Vec<usize>> = BTreeMap::new();
@@ -472,6 +510,9 @@ impl fmt::Display for Network {
         }
         let mut lengths: Vec<u8> = distribution.keys().cloned().collect();
         lengths.sort();
+        try!(writeln!(fmt, "| Prefix lengths | {:>8} |", lengths.len()));
+        try!(writeln!(fmt));
+
         try!(writeln!(fmt, "| Prefix len {}", Stats::get_header_line()));
         try!(writeln!(fmt, "|-----------:{}", Stats::get_separator_line()));
         for i in lengths {

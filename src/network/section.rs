@@ -60,6 +60,8 @@ pub struct Section {
     merging: bool,
     /// are we currently splitting?
     splitting: bool,
+    /// Cumulated drop probabilities over the section nodes
+    drop_weight: f64,
 }
 
 impl Section {
@@ -74,6 +76,7 @@ impl Section {
             infants: BTreeSet::new(),
             merging: false,
             splitting: false,
+            drop_weight: 0f64,
         }
     }
 
@@ -116,8 +119,8 @@ impl Section {
         let mut events = vec![];
         let other_event = match event {
             NetworkEvent::Live(node, _) => self.add(node, params),
-            NetworkEvent::Relocated(node) | NetworkEvent::Gone(node) => self.relocate(node.name()),
-            NetworkEvent::Lost(name) => self.remove(name),
+            NetworkEvent::Relocated(node) | NetworkEvent::Gone(node) => self.relocate(node.name(), params),
+            NetworkEvent::Lost(name) => self.remove(name, params),
             NetworkEvent::PrefixChange(p) => {
                 info!("{:?} PrefixChange to {:?}", self.prefix, p);
                 EventResult::Handled
@@ -188,6 +191,11 @@ impl Section {
         if !event.should_count() {
             return vec![];
         }
+        // Don't relocate a node if the section is about to split, meaning it is at risk to merge if a node leaves the section
+        // (hence 1 margin)
+        if self.is_complete() && self.adults.len() <= GROUP_SIZE + 1 {
+            return vec![];
+        }
         // The hashed object isn't known yet and doesn't really matter for this simulation
         // => just take a random number
         let event_hash = random();
@@ -195,7 +203,7 @@ impl Section {
         let node_to_age = self.choose_for_relocation(trailing_zeros + params.init_age - 1
                                                     + if params.relocation_rate == RelocationRate::Standard { 0 } else { 1 });
         if let Some(node) = node_to_age {
-            let _ = self.relocate(node.name());
+            let _ = self.relocate(node.name(), params);
             vec![SectionEvent::NeedRelocate(node)]
         } else {
             vec![]
@@ -207,6 +215,27 @@ impl Section {
         params.max_young != 0
             && self.nodes.values().filter(|n| n.age() <= params.init_age).count() >= params.max_young
             && self.is_complete()
+    }
+
+    /// Returns the cumulated drop probabilities over the section nodes
+    pub fn drop_weight(&self) -> f64 {
+        self.drop_weight
+    }
+
+    /// Adapt section drop weight when a node is added or removed
+    fn increment_drop_weight(&mut self, node: &Node, params: &Params) {
+        self.drop_weight += node.drop_probability(params.drop_dist);
+    }
+    fn decrement_drop_weight(&mut self, node: &Node, params: &Params) {
+        self.drop_weight -= node.drop_probability(params.drop_dist);
+    }
+
+    /// Recompute section drop weight (after a merge or a split)
+    pub fn recompute_drop_weight(&mut self, params: &Params) {
+        self.drop_weight = self.nodes
+            .iter()
+            .map(|(_, n)| n.drop_probability(params.drop_dist))
+            .sum();
     }
 
     /// Adds a node to the section and returns whether the event was handled
@@ -230,6 +259,7 @@ impl Section {
             self.infants.insert(node.name());
         }
         self.nodes.insert(node.name(), node);
+        self.increment_drop_weight(&node, params);
         self.update_elders();
         if !node.is_adult() && self.is_complete() {
             EventResult::Ignored
@@ -239,12 +269,13 @@ impl Section {
     }
 
     /// Removes a node from the section and returns whether the event was handled
-    fn remove(&mut self, name: Name) -> EventResult {
+    fn remove(&mut self, name: Name, params: &Params) -> EventResult {
         let node = self.nodes.remove(&name);
         let _ = self.adults.remove(&name);
         let _ = self.infants.remove(&name);
         self.update_elders();
         if let Some(node) = node {
+            self.decrement_drop_weight(&node, params);
             if !node.is_adult() && self.is_complete() {
                 EventResult::Ignored
             } else {
@@ -257,12 +288,13 @@ impl Section {
 
     /// Relocates a node from the section - that is, removes it, but doesn't generate a `Dropped`
     /// section event, which would cause the network to think that the node has actually left
-    fn relocate(&mut self, name: Name) -> EventResult {
+    fn relocate(&mut self, name: Name, params: &Params) -> EventResult {
         let node = self.nodes.remove(&name);
         let _ = self.adults.remove(&name);
         let _ = self.infants.remove(&name);
         self.update_elders();
         if let Some(node) = node {
+            self.decrement_drop_weight(&node, params);
             if !node.is_adult() && self.is_complete() {
                 EventResult::Ignored
             } else {
@@ -279,7 +311,7 @@ impl Section {
     }
 
     /// Splits the section into two and generates the corresponding churn events
-    pub fn split(mut self, params: &Params) -> (SplitData, SplitData) {
+    pub fn split(mut self) -> (SplitData, SplitData) {
         self.splitting = false;
         let mut churn0 = vec![];
         let mut churn1 = vec![];
@@ -294,9 +326,6 @@ impl Section {
         section1.prefix = prefix1;
         section1.verifying_prefix = prefix1;
         for (name, mut node) in &mut section0.nodes {
-            if params.inc_age {
-                node.increment_age();
-            }
             if prefix0.matches(*name) {
                 churn1.push(NetworkEvent::Gone(*node));
             } else if prefix1.matches(*name) {
@@ -335,9 +364,6 @@ impl Section {
             result.verifying_prefix = merged_prefix;
         }
         for (_, mut node) in self.nodes.into_iter().chain(other.nodes.into_iter()) {
-            if params.inc_age {
-                node.increment_age();
-            }
             result.add(node, params);
         }
         result
