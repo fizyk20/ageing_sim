@@ -127,6 +127,14 @@ fn get_params() -> Params {
                 .help("Probability of distant relocation (0-100); default: 100")
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("relocation_margin")
+                .short("m")
+                .long("relocation-margin")
+                .value_name("MARGIN")
+                .help("Controls inhibition of relocations from small sections (-1, 0, 1, 2, ...); default: 1")
+                .takes_value(true),
+        )
         .get_matches();
     let init_age = matches
         .value_of("initage")
@@ -174,6 +182,12 @@ fn get_params() -> Params {
     distant_relocation_probability /= 100.0;
     assert!(0.0 <= distant_relocation_probability &&
             distant_relocation_probability <= 100.0, "Probability must be between 0 and 100!");
+    let relocation_margin = matches
+        .value_of("relocation_margin")
+        .unwrap_or("1")
+        .parse()
+        .expect("Relocation margin must be a number!");
+    assert!(relocation_margin >= -1, "Relocation margin must be greater than or equal to -1!");
     let p_add1 = matches
         .value_of("p_add1")
         .unwrap_or("90")
@@ -202,6 +216,7 @@ fn get_params() -> Params {
         drop_dist,
         relocation_rate,
         distant_relocation_probability,
+        relocation_margin,
     }
 }
 

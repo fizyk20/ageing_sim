@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::mem;
 use std::iter::{Iterator, Sum};
+use std::f64;
 use random::{random, shuffle};
 use network::prefix::Prefix;
 use network::node::Node;
@@ -511,6 +512,17 @@ impl fmt::Display for Network {
         let mut lengths: Vec<u8> = distribution.keys().cloned().collect();
         lengths.sort();
         try!(writeln!(fmt, "| Prefix lengths | {:>8} |", lengths.len()));
+        let max_prefix_length = lengths.last().cloned().unwrap();
+        let mut max_density = f64::MIN_POSITIVE;
+        let mut min_density = f64::MAX;
+        for (pfx, section) in &self.nodes {
+            let range = max_prefix_length - pfx.len();
+            let width = 1 << range;
+            let density = section.len() as f64 / width as f64;
+            max_density = max_density.max(density);
+            min_density = min_density.min(density);
+        }
+        try!(writeln!(fmt, "| Density gap    | {:>8.2} |", max_density / min_density));
         try!(writeln!(fmt));
 
         try!(writeln!(fmt, "| Prefix len {}", Stats::get_header_line()));

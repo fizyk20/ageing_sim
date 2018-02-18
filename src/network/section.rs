@@ -191,9 +191,8 @@ impl Section {
         if !event.should_count() {
             return vec![];
         }
-        // Don't relocate a node if the section is about to split, meaning it is at risk to merge if a node leaves the section
-        // (hence 1 margin)
-        if self.is_complete() && self.adults.len() <= GROUP_SIZE + 1 {
+        // Don't relocate a node if the section is about to merge or is at risk to merge if some node leave the section
+        if self.is_complete() && self.adults.len() as i8 <= GROUP_SIZE as i8 + params.relocation_margin {
             return vec![];
         }
         // The hashed object isn't known yet and doesn't really matter for this simulation

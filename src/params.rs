@@ -79,4 +79,13 @@ pub struct Params {
     //   and then the weakest neighbour of this section is chosen
     // - between the 0 and 1 a mix of the two methods
     pub distant_relocation_probability: f64,
+    // Control inhibition of relocations from a small section. The condition is:
+    // adult count <= GROUP_SIZE + relocation_margin
+    // Which defines the following behavior:
+    // - relocation_margin=-1: no inhibition, this is the original behavior from @bart's code
+    // - relocation_margin=0: relocation is inhibited if it would trigger a section merge
+    // - relocation_margin=1: relocation is inhibited if a subsequent node drop would trigger a section merge
+    // - relocation_margin=2: relocation is inhibited if 2 subsequent node drops would trigger a section merge
+    // - ...
+    pub relocation_margin: i8,
 }
